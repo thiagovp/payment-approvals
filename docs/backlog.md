@@ -567,7 +567,10 @@ Realistic traffic against the Compose stack, written in Gatling's Java DSL.
 - [ ] Tokens for seed users obtained from Keycloak before the scenario starts
 - [ ] Scenario 1: requesters submit requests at a ramping rate
 - [ ] Scenario 2: approvers decide on the same requests concurrently
-- [ ] Assertions on p95 latency and error rate, with targets taken from the M4 SLO
+- [ ] Load profile: ramp to 50 requests/second over 1 minute, then hold for 5 minutes
+- [ ] Assertion: p95 latency under 300 ms for reads (list, get) and under 500 ms for writes (create, approve, reject)
+- [ ] Assertion: failed requests (5xx or failed checks) under 0.5%
+- [ ] These are the M4 SLO targets, recorded in docs/testing.md; they change only there, with the reason
 - [ ] After the run, a check that no request has more approvals than required and none was lost
 - [ ] Runs on demand from a workflow_dispatch, never on PRs; HTML report uploaded
 ```
@@ -607,7 +610,7 @@ Create these epics now so the roadmap is visible, but write their tickets only w
 - OpenTelemetry tracing; Grafana LGTM container in Compose
 - Custom Micrometer metrics: requests submitted, approvals, decision latency
 - Grafana dashboard committed as JSON
-- One SLO (for example, 99% of decisions under 2 s) with a burn rate alert
+- SLOs over a 28 day window: p95 latency under 300 ms for reads and under 500 ms for writes, and 5xx rate under 0.5%; burn rate alert on the error budget. Initial targets, revisable after the performance baseline, always in docs/testing.md
 
 ### Epic: Payments saga (M5)
 
