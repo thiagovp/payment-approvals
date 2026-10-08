@@ -63,6 +63,7 @@ Same flow as bcb-mcp: create labels and milestones, then the epics as issues, th
 | `Epic: Foundation` | Project skeleton, Keycloak, database, CI and the security baseline. |
 | `Epic: Requests and authorization` | Payment requests, approval policy, approvals and audit trail, with tenant isolation. |
 | `Epic: Angular client` | Angular 22 client with PKCE login and the requester, approver and admin screens. |
+| `Epic: Quality and testing` | Test strategy, test tooling and non-functional tests: smoke, mutation, load and performance. |
 | `Epic: Observability` | Metrics, structured logs, distributed tracing and one SLO. |
 | `Epic: Payments saga` | payment-service with ledger, orchestrated saga, Stripe and compensation. |
 | `Epic: Kubernetes` | Helm chart, probes, config and GitOps on a local or VPS cluster. |
@@ -444,6 +445,156 @@ The whole Phase 1 flow against the real stack on Compose.
 - [ ] Approver 1 approves: still pending. Approver 2 approves: APPROVED
 - [ ] A beta user cannot open the acme request URL (not found)
 - [ ] Runs in GitHub Actions with Compose, on PRs to main
+```
+
+## Epic: Quality and testing (cross-cutting)
+
+Ten tickets. Unit, integration and E2E tests already live in each feature's test ticket; this epic adds the strategy, the tooling and the test types that cover the whole system. The epic has no single milestone; each ticket carries its own, so it lands when its prerequisites exist.
+
+| Test type | Where it lives | When it runs |
+| --- | --- | --- |
+| Unit | each feature's test ticket | every push |
+| Integration (Testcontainers) | each feature's test ticket | every push |
+| Architecture (ArchUnit) | this epic, M1 | every push |
+| Static analysis (SonarQube Cloud) | this epic, M1 | every PR to main, blocks merge |
+| Smoke | this epic, M1 (reused in M6 and M9) | after every deploy and in CI on Compose |
+| End to end (Playwright) | Angular epic, M3 | PRs to main |
+| Mutation (PIT) | this epic, M2 | nightly and on demand |
+| Load (Gatling) | this epic, M4 | on demand, never on PRs |
+| Performance baseline | this epic, M4 | on demand, before and after relevant changes |
+| Saga resilience under load | this epic, M5 | on demand |
+
+**Title:** `Write test strategy` · **Labels:** `type: docs` · **Milestone:** M1 Foundation
+
+```markdown
+docs/testing.md: what each test type proves, where it runs and how it is named.
+
+## Acceptance criteria
+- [ ] The test pyramid for this project, with one sentence per test type on what it proves
+- [ ] Naming: unit tests *Test, integration tests *IT
+- [ ] Which tests run on push, on PR, nightly, after deploy and on demand
+- [ ] Tools per type, with the reason for each choice
+- [ ] Coverage policy: what is measured, the threshold, and what is excluded
+```
+
+**Title:** `Separate unit and integration test runs` · **Labels:** `type: chore`, `area: backend` · **Milestone:** M1 Foundation
+
+```markdown
+Fast feedback without Docker; full verification in CI.
+
+## Acceptance criteria
+- [ ] Surefire runs *Test, Failsafe runs *IT
+- [ ] ./mvnw test runs only unit tests and needs no Docker
+- [ ] ./mvnw verify runs both
+- [ ] JaCoCo report merges unit and integration coverage
+- [ ] Coverage threshold on the domain and authorization packages fails the build (value from docs/testing.md)
+- [ ] CI uploads the test and coverage reports as artifacts
+```
+
+**Title:** `Architecture tests with ArchUnit` · **Labels:** `type: test`, `area: backend` · **Milestone:** M1 Foundation
+
+```markdown
+Rules about the code's structure, enforced by the build.
+
+## Acceptance criteria
+- [ ] Controllers never access repositories directly
+- [ ] Domain package has no dependency on Spring web or persistence annotations
+- [ ] No class outside the audit package writes audit events
+- [ ] Every controller method has an authorization annotation or is explicitly public
+- [ ] Rules documented in docs/testing.md
+```
+
+**Title:** `Smoke test suite` · **Labels:** `type: test`, `area: infra` · **Milestone:** M1 Foundation
+
+```markdown
+A few fast checks that prove a deployed environment is alive and wired correctly. Reused after deploys in M6 (Kubernetes) and M9 (EKS).
+
+## Acceptance criteria
+- [ ] Runs against a base URL passed as a parameter, not a hardcoded host
+- [ ] Checks: health endpoint UP, token obtained from Keycloak for a seed user, GET /me returns the right tenant
+- [ ] Creates one request and reads it back, then cleans up or uses a dedicated smoke tenant
+- [ ] Finishes in under 30 seconds and exits non zero on any failure
+- [ ] Runs in CI against the Compose stack after the build
+```
+
+**Title:** `Static analysis with SonarQube Cloud` · **Labels:** `type: chore`, `area: infra` · **Milestone:** M1 Foundation
+
+```markdown
+Quality gate on every pull request to main.
+
+## Acceptance criteria
+- [ ] SonarQube Cloud organization bound to the GitHub account, Free plan
+- [ ] One project per module: approval-service (Java) and web-angular (TypeScript), added when that module exists
+- [ ] CI-based analysis from GitHub Actions (not automatic analysis), so coverage is imported
+- [ ] JaCoCo XML report and the Angular lcov report passed to the analysis
+- [ ] SONAR_TOKEN stored as a repository secret
+- [ ] Quality gate "Sonar way" on new code; result reported as a status check on the PR
+- [ ] Badge for quality gate status in the README
+```
+
+**Title:** `Branch protection on main` · **Labels:** `type: chore`, `area: infra` · **Milestone:** M1 Foundation
+
+```markdown
+Nothing reaches main without passing the gates.
+
+## Acceptance criteria
+- [ ] Ruleset on main: changes only through pull requests, no force push, no deletion
+- [ ] Required status checks: CI build and tests, SonarQube Cloud quality gate
+- [ ] Conversation resolution required before merging, so every CodeRabbit comment must be addressed
+- [ ] No required approving review (a solo author cannot approve their own PR); documented in CONTRIBUTING.md
+- [ ] Verified with a test PR that fails the quality gate and cannot be merged
+```
+
+**Title:** `Mutation testing with PIT` · **Labels:** `type: test`, `area: backend` · **Milestone:** M2 Requests and authorization
+
+```markdown
+Prove the tests actually catch broken rules, not just execute lines.
+
+## Acceptance criteria
+- [ ] pitest-maven-plugin with the JUnit 5 plugin, scoped to the domain and authorization packages
+- [ ] Mutation score threshold set in docs/testing.md; build fails below it
+- [ ] Runs nightly and on demand in GitHub Actions, not on every push
+- [ ] HTML report uploaded as an artifact
+- [ ] Surviving mutants in the five product rules reviewed and fixed with new tests; findings noted in docs/testing.md
+```
+
+**Title:** `Load test with Gatling` · **Labels:** `type: test`, `area: backend` · **Milestone:** M4 Observability
+
+```markdown
+Realistic traffic against the Compose stack, written in Gatling's Java DSL.
+
+## Acceptance criteria
+- [ ] Tokens for seed users obtained from Keycloak before the scenario starts
+- [ ] Scenario 1: requesters submit requests at a ramping rate
+- [ ] Scenario 2: approvers decide on the same requests concurrently
+- [ ] Assertions on p95 latency and error rate, with targets taken from the M4 SLO
+- [ ] After the run, a check that no request has more approvals than required and none was lost
+- [ ] Runs on demand from a workflow_dispatch, never on PRs; HTML report uploaded
+```
+
+**Title:** `Performance baseline and analysis` · **Labels:** `type: test`, `area: backend` · **Milestone:** M4 Observability
+
+```markdown
+Numbers to compare against, and the reasons behind them.
+
+## Acceptance criteria
+- [ ] Seed script with 100k requests across both tenants
+- [ ] p50, p95, p99 and throughput recorded for list, get, create and approve
+- [ ] EXPLAIN ANALYZE for the list query with filters; index decisions justified
+- [ ] Same load with virtual threads on and off; results compared
+- [ ] Findings in docs/performance.md with the Grafana screenshots
+```
+
+**Title:** `Saga resilience under load` · **Labels:** `type: test`, `area: backend` · **Milestone:** M5 Payments saga
+
+```markdown
+The payment flow keeps its invariants when things fail at volume.
+
+## Acceptance criteria
+- [ ] Load run with injected failures: a percentage of Stripe timeouts and 500s, duplicate Kafka events, duplicate webhooks
+- [ ] One payment-service instance restarted mid run
+- [ ] After the run: no request charged twice, ledger balance equals the sum of its entries, every APPROVED request ends PAID or PAYMENT_FAILED
+- [ ] Results and any bug found recorded in docs/performance.md
 ```
 
 ## Later epics (Phases 2 and 3)
